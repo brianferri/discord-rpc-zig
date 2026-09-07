@@ -1,0 +1,14 @@
+services:
+  wine:
+    container_name: discord-rpc-zig-wine
+    image: scottyhardy/docker-wine
+    environment:
+      WINEDEBUG: -all
+    volumes:
+      - ../../../zig-out/cross/:/cross:ro
+    command: wine /cross/test-x86_64-windows.exe
+    working_dir: /cross
+
+networks:
+  default:
+    driver: bridge

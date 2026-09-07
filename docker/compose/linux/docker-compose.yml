@@ -1,0 +1,45 @@
+services:
+  glibc:
+    container_name: discord-rpc-zig-glibc
+    image: debian:12-slim
+    volumes:
+      - ../../../zig-out/cross/:/cross:ro
+    command: /cross/test-x86_64-linux-gnu
+    working_dir: /cross
+
+  musl:
+    container_name: discord-rpc-zig-musl
+    image: alpine:3.20
+    volumes:
+      - ../../../zig-out/cross/:/cross:ro
+    command: /cross/test-x86_64-linux-musl
+    working_dir: /cross
+
+  # A runtime directory holding the endpoint only under a Flatpak layout, which is where a
+  # sandboxed Discord binds it. The suite runs that case when a layout is advertised.
+  sandbox:
+    container_name: discord-rpc-zig-sandbox
+    image: alpine:3.20
+    environment:
+      XDG_RUNTIME_DIR: /run/user/1000
+      DISCORD_RPC_SANDBOX_LAYOUT: app/com.discordapp.Discord
+    volumes:
+      - ../../../zig-out/cross/:/cross:ro
+    command: /cross/test-x86_64-linux-musl
+    working_dir: /cross
+
+  # Emulated, so it is opt-in: `docker run --privileged tonistiigi/binfmt --install arm64`
+  # registers the interpreter this needs, and that registration is host-wide.
+  arm64:
+    profiles: [emulated]
+    container_name: discord-rpc-zig-arm64
+    image: alpine:3.20
+    platform: linux/arm64
+    volumes:
+      - ../../../zig-out/cross/:/cross:ro
+    command: /cross/test-aarch64-linux-musl
+    working_dir: /cross
+
+networks:
+  default:
+    driver: bridge

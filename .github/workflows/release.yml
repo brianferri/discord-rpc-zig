@@ -1,0 +1,123 @@
+name: Release
+
+# Keep `ZIG_VERSION` in step.
+# the setup-zig mirror purges old nightlies, so a stale pin eventually fails to download.
+#
+# The version in `build.zig.zon` is what names a release. A push whose version already has
+# one does nothing, so cutting a release means bumping that field and nothing else.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two pushes in quick succession would otherwise both find the version unreleased and race
+# to open it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  ZIG_VERSION: 0.17.0-dev.1786+75044cb04
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.manifest.outputs.version }}
+      unreleased: ${{ steps.existing.outputs.unreleased }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          use-cache: false
+
+      # `zig build version` writes the manifest's own version into the prefix, so nothing
+      # here matches a pattern against the manifest.
+      - id: manifest
+        run: |
+          zig build version --prefix manifest
+          echo "version=$(cat manifest/version)" >> "$GITHUB_OUTPUT"
+
+      - id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.manifest.outputs.version }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "unreleased=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "unreleased=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # One archive per system, carrying both linkages. Windows names the import
+  # library and the static archive alike, so each linkage gets its own prefix
+  # and the two never land on each other.
+  libraries:
+    needs: version
+    if: needs.version.outputs.unreleased == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-linux-gnu
+          - x86_64-linux-musl
+          - aarch64-linux-musl
+          - x86_64-windows
+          - aarch64-macos
+          - x86_64-macos
+          - x86_64-freebsd
+          - x86_64-netbsd
+          - x86_64-openbsd
+    env:
+      RELEASE: discord-rpc-c-${{ needs.version.outputs.version }}-${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          use-cache: false
+
+      - name: Build both linkages
+        run: |
+          for linkage in dynamic static; do
+            zig build lib \
+              -Dtarget=${{ matrix.target }} \
+              -Doptimize=ReleaseFast \
+              -Dlinkage=$linkage \
+              --prefix "staging/$RELEASE/$linkage"
+          done
+
+      - name: Archive
+        run: tar -czf "$RELEASE.tar.gz" -C staging "$RELEASE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: discord-rpc-c-${{ needs.version.outputs.version }}-${{ matrix.target }}
+          path: discord-rpc-c-${{ needs.version.outputs.version }}-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [version, libraries]
+    if: needs.version.outputs.unreleased == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: archives
+          merge-multiple: true
+      # The tag is opened at the commit that carried the version bump.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes \
+            archives/*.tar.gz

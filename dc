@@ -1,0 +1,406 @@
+#!/usr/bin/env bash
+
+# The argument functions are considered unreachable by shellcheck due to the dynamic nature of the switch case in the parse_arguments function
+# shellcheck disable=SC2317
+# shellcheck disable=SC2329
+
+SCRIPT="DCTool"
+VERSION="2.9.0"
+AUTHOR="Brian Ferri (https://github.com/brianferri)"
+
+# Arguments
+PROJECT_NAME=$(basename "$(pwd)" | tr '[:upper:]' '[:lower:]')
+CWD=$(pwd)
+OS=$(uname)
+ARGUMENTS=("$@")
+
+# DC Args
+export OS
+export COMPOSE_CONFIGURATION
+export COMPOSE_BAKE=true
+
+# Default values
+COMPOSE_CONFIGURATION=""
+SKIP_CONFIRMATION=false
+
+# Flags
+DEBUG=false
+
+ok() { # Print a green [OK]
+    local message="$1"
+    echo -e "\033[1;32m[OK]\033[0m $message"
+}
+
+info() { # Print a cyan [INFO]
+    local message="$1"
+    echo -e "\033[1;36m[INFO]\033[0m $message"
+}
+
+warn() { # Print a yellow [WARN]
+    local message="$1"
+    echo -e "\033[1;33m[WARN]\033[0m $message"
+}
+
+error() { # Print a red [ERROR]
+    local message="$1"
+    local critical="$2"
+    local error_code="$3"
+    echo -e "\033[1;31m[ERROR]\033[0m $message"
+    if [[ "$critical" == "true" ]]; then
+        if [[ -z "$error_code" ]]; then
+            exit 1
+        else
+            exit "$error_code"
+        fi
+    fi
+}
+
+echo_debug() { # Print a purple [DEBUG]
+    if [[ "$DEBUG" == "true" ]]; then
+        local string="$1"
+        echo -e "\033[1;35m[DEBUG]\033[0m $string"
+    fi
+}
+
+if_empty_abort() {
+    local variable="$1"
+    if [[ -z "$variable" ]]; then
+        error "Aborting..." true
+    fi
+}
+
+ask() {
+    local string="$1"
+    local abort_on_refuse="$2"
+
+    if [[ "$SKIP_CONFIRMATION" == "false" ]]; then
+        if [[ -z "$string" ]]; then
+            error "No string provided for the ask function" true
+        fi
+        echo -e "\033[93;4m$string\033[0m"
+        read -r -p "Continue? [y/N] " response
+        if [[ "$response" =~ ^([yY][eE][sS]|[yY])+$ ]]; then
+            ok "Continuing..."
+        else
+            if [[ "$abort_on_refuse" == "true" ]]; then
+                error "Aborting..." true
+            else
+                warn "Continuing..."
+                return 1
+            fi
+        fi
+    fi
+}
+
+print_debug_info() {
+    echo_debug "Script version: $VERSION"
+    echo_debug "CWD: $CWD"
+    echo_debug "Bash version: $BASH_VERSION"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo_debug "Brew version: $(brew --version)"
+    fi
+    echo_debug "$(fzy --version)"
+}
+
+version() {
+    echo -e "\033[3m$SCRIPT v$VERSION - $AUTHOR\033[23m"
+    exit 0
+}
+
+help() {
+    echo -e "\033[93;4mUsage:\033[0m"
+    echo -e "\t\033[3m$0 <command> [options]\033[23m"
+
+    echo -e "\033[93;4mCommands:\033[0m"
+    echo -e "  up    \tStart the project"
+    echo -e "  down    \tStop the project"
+    echo -e "  enter    \tEnter a container"
+    echo -e "  exec    \tExecute command in a container"
+    echo -e "  log    \tView the logs"
+    echo -e "  rebuild    \tRebuild the project"
+    echo -e "  purge    \tPurge the project"
+    echo -e "  help    \tView this help"
+    echo -e "  version    \tView the version"
+    echo -e "  ssv    \tSkip setup verifications"
+
+    echo -e "\033[93;4mExamples:\033[0m"
+    echo -e "  \033[3m$0 up\033[23m"
+    echo -e "  \033[3m$0 enter php\033[23m"
+    echo -e "  \033[3m$0 enter php fs\033[23m"
+    echo -e "  \033[3m$0 log\033[23m"
+    echo -e "  \033[3m$0 rebuild\033[23m"
+    echo -e "  \033[3m$0 purge\033[23m"
+    echo -e "  \033[3m$0 help\033[23m"
+
+    echo ""
+    print_debug_info
+    version
+}
+
+exec() {
+    shift
+
+    if [[ "$1" = "help" || "$1" = "" ]]; then
+        echo -e "\033[93;4mUsage:\033[0m"
+        echo -e "\t\033[3m$0 exec <container> [--stdin|-i] <command...>\033[23m"
+        echo -e "\033[93;4mOptions:\033[0m"
+        echo -e "\t\033[3m--stdin, -i\033[23m\tKeep stdin open for stdio clients"
+        echo -e "\033[93;4mExamples:\033[0m"
+        echo -e "\t\033[3m$0 exec container app test --compact\033[23m"
+        exit 3
+    fi
+
+    local container_name="$1"
+    shift
+
+    local keep_stdin=false
+    if [[ "$1" == "--stdin" || "$1" == "-i" ]]; then
+        keep_stdin=true
+        shift
+    fi
+
+    if [[ "$1" = "" ]]; then
+        error "No command provided for exec, aborting..." true 126
+    fi
+
+    CONTAINER=$(docker ps | grep "$container_name" | awk '{print $1}' | head -n 1)
+    if [[ "$CONTAINER" == "" ]]; then
+        error "Container '$container_name' not found or not running" true 126
+    fi
+
+    if [[ "$keep_stdin" == "true" ]]; then
+        docker exec -i "$CONTAINER" "$@"
+    else
+        docker exec "$CONTAINER" "$@"
+    fi
+    exit 130
+}
+
+parse_arguments() {
+    # Single option parsing
+    if [[ "$*" == *"debug"* ]]; then
+        DEBUG=true
+        ARGUMENTS=("${ARGUMENTS[@]/debug/}")
+    fi
+
+    verify_compose
+
+    # Multi option parsing
+    local HAS_RUN_VALID_COMMAND="false"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        "$1")
+            function_name="$1"
+            if [[ $(type -t "$function_name") == "function" ]]; then
+                echo_debug "Executing $function_name"
+                echo_debug "Arguments: $*"
+                $function_name "$@"
+                HAS_RUN_VALID_COMMAND=true
+            fi
+            ;;
+        *)
+            error "Unknown option $1, make sure you are using the correct syntax"
+            print_help
+            exit 1
+            ;;
+        esac
+        shift
+    done
+    if [[ "$HAS_RUN_VALID_COMMAND" == "false" ]]; then
+        help
+    fi
+}
+
+enter() {
+    shift
+
+    local enter_fs=false
+
+    if [[ "*$*" == *"fs"* ]]; then
+        enter_fs=true
+        ARGUMENTS=("${ARGUMENTS[@]/fs/}")
+    fi
+
+    if [[ "$1" = "help" ]]; then
+        echo -e "\033[93;4mUsage:\033[0m"
+        echo -e "\t\033[3m$0 enter <container> [fs]\033[23m"
+        echo -e "\033[93;4mOptions:\033[0m"
+        echo -e "\t\033[3mfs\033[23m\tEnter the container's filesystem"
+        echo -e "\033[93;4mExamples:\033[0m"
+        echo -e "\t\033[3m$0 enter php\033[23m"
+        echo -e "\t\033[3m$0 enter php fs\033[23m"
+        exit 3
+    fi
+
+    if [[ ${COMPOSE_CONTAINERS} == "" ]]; then
+        error "No containers found, make sure you are using the correct syntax" true 126
+    elif [[ "$1" != "" && "$1" != "fs" ]]; then
+        CONTAINER=$(docker ps | grep "$1" | awk '{print $1}')
+        echo -e "\033[93;4mEntering container:\033[0m \033[3m$1\033[23m\n"
+
+        # Additional option to enter the container's filesystem
+        if [[ "$enter_fs" == "true" ]]; then
+            docker exec -it "${CONTAINER}" /bin/sh
+            exit 130
+        else
+            warn "Pressing CTRL+C will exit the container and stop the process"
+            docker attach "${CONTAINER}"
+            exit 130
+        fi
+    else
+        CONTAINER=$(echo "$COMPOSE_CONTAINERS" | fzy -p "Select a container")
+        if [[ "$CONTAINER" == "" ]]; then
+            error "No container selected, aborting..." true 126
+        fi
+        echo -e "\033[93;4mEntering container:\033[0m \033[3m$CONTAINER\033[23m\n"
+        if [[ "$enter_fs" == "true" ]]; then
+            docker exec -it "${CONTAINER}" /bin/sh
+            exit 130
+        else
+            warn "Pressing CTRL+C will exit the container and stop the process"
+            docker attach "${CONTAINER}"
+            exit 130
+        fi
+        exit 130
+    fi
+}
+
+build () {
+    ${DOCKER} build
+}
+
+up() {
+    ${DOCKER} up -d --force-recreate --remove-orphans
+}
+
+down() {
+    ${DOCKER} down
+}
+
+rebuild() {
+    down
+    ${DOCKER} pull
+    build
+    up
+}
+
+purge() {
+    ask "Are you sure you want to run this command? This will remove all containers, images, volumes and networks on the system." true
+    ${DOCKER} down
+    docker system prune -a
+    docker rmi "$(docker images -a -q)"
+    docker rm "$(docker ps -a -f status=exited -q)"
+    docker volume prune
+}
+
+log() {
+    ${DOCKER} logs -f --tail="all"
+}
+
+verify_compose() {
+    if [ ! -d "./docker" ]; then
+        error "No docker directory found, are you sure you're in the right place?" true 126
+    fi
+
+    COMPOSE_CONFIGURATIONS=$(find ./docker/compose/ -maxdepth 1 -mindepth 1 -type d -exec basename {} \;)
+    for argument in "${ARGUMENTS[@]}"; do
+        for configuration in ${COMPOSE_CONFIGURATIONS}; do
+            if [[ "$argument" == "$configuration" ]]; then
+                if [[ "$COMPOSE_CONFIGURATION" != "" ]]; then
+                    error "Multiple configurations found, please specify only one" true
+                fi
+                COMPOSE_CONFIGURATION="$argument"
+                ARGUMENTS=("${ARGUMENTS[@]/$argument/}")
+            fi
+        done
+    done
+    if [[ $(echo "$COMPOSE_CONFIGURATIONS" | wc -l) -eq 1 ]]; then
+        COMPOSE_CONFIGURATION="$COMPOSE_CONFIGURATIONS"
+    fi
+    if [[ "$COMPOSE_CONFIGURATION" == "" ]]; then
+        COMPOSE_CONFIGURATION=$(echo "$COMPOSE_CONFIGURATIONS" | fzy -p "Select a configuration")
+        if [[ "$COMPOSE_CONFIGURATION" == "" ]]; then
+            error "No configuration selected, aborting..." true 126
+        fi
+    fi
+
+    if [ ! -f "./docker/compose/${COMPOSE_CONFIGURATION}/docker-compose.yml" ]; then
+        error "No docker-compose.yml file found, please create one." true 126
+    elif [ ! -f "./docker/compose/${COMPOSE_CONFIGURATION}/.env" ]; then
+        if [ -f "./docker/compose/${COMPOSE_CONFIGURATION}/dist.env" ]; then
+            ask "No .env file found, do you want to copy the dist.env file?" true
+            cp "./docker/compose/${COMPOSE_CONFIGURATION}/dist.env" "./docker/compose/${COMPOSE_CONFIGURATION}/.env"
+            while IFS='=' read -r key value; do
+                if [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+                    new_value="${!key:-$value}"
+                    if [[ "$OSTYPE" == "darwin"* ]]; then
+                        sed -i '' -E "s|^$key=.*|$key=$new_value|" "./docker/compose/${COMPOSE_CONFIGURATION}/.env"
+                    else
+                        sed -i -E "s|^$key=.*|$key=$new_value|" "./docker/compose/${COMPOSE_CONFIGURATION}/.env"
+                    fi
+                fi
+            done <"./docker/compose/${COMPOSE_CONFIGURATION}/dist.env"
+        else
+            error "No dist.env file found, please create one." true 126
+        fi
+    fi
+
+    OVERRIDE_FILE="./docker/compose/${COMPOSE_CONFIGURATION}/docker-compose.override.yml"
+    if [ -f "$OVERRIDE_FILE" ]; then
+        COMPOSE_OVERRIDE="--file $OVERRIDE_FILE"
+    fi
+
+    DOCKER="docker compose \
+        --file docker/compose/${COMPOSE_CONFIGURATION}/docker-compose.yml \
+        --env-file docker/compose/${COMPOSE_CONFIGURATION}/.env \
+        ${COMPOSE_OVERRIDE} \
+        -p ${PROJECT_NAME}"
+
+    if [ "$DEBUG" = "true" ]; then DOCKER="$DOCKER --progress=plain"; fi
+
+    COMPOSE_CONTAINERS=$(${DOCKER} \
+        ps \
+        --format table | grep -v "NAME" | awk '{print $1}')
+}
+
+verify_macos() {
+    if ! command -v fzy >/dev/null 2>&1; then
+        error "fzy is not installed. Please install 'fzy' before proceeding: https://github.com/jhawthorn/fzy"
+    fi
+}
+
+verify_linux() {
+    if ! command -v fzy >/dev/null 2>&1; then
+        error "fzy is not installed. Please install 'fzy' before proceeding: https://github.com/jhawthorn/fzy"
+    fi
+}
+
+verify_setup() {
+    if [[ "$OSTYPE" != "darwin"* && "$OSTYPE" != "linux-gnu" ]]; then
+        error "This script is only supported on MacOS and Linux." true
+    fi
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        verify_macos
+        return 0
+    elif [[ "$OSTYPE" == "linux-gnu" ]]; then
+        verify_linux
+        return 0
+    fi
+
+    error "Unsupported OS: $OSTYPE" true
+}
+
+if [[ "$*" != *"ssv"* ]]; then
+    verify_setup
+else
+    warn "Skipping setup verification... Make sure this is intentional"
+    ask "Are you sure you want to run this command?" true
+    ARGUMENTS=("${ARGUMENTS[@]/ssv/}")
+fi
+
+parse_arguments "${ARGUMENTS[@]}"
+print_debug_info
+
+exit 0
+
