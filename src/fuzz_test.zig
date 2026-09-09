@@ -308,12 +308,8 @@ fn fuzzPresence(_: void, smith: *Smith) anyerror!void {
         .join_secret = &long,
         .spectate_secret = &long,
         .instance = smith.value(bool),
-        .kind = switch (smith.index(4)) {
-            0 => .playing,
-            1 => .listening,
-            2 => .watching,
-            else => .competing,
-        },
+        // Every type Discord names, and one it does not, since the field is left open.
+        .activity_type = @fromBackingInt(smith.value(u8)),
         .buttons = buttons[0..smith.index(Presence.max_buttons + 1)],
     };
 

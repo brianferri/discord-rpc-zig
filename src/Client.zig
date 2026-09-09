@@ -1716,7 +1716,7 @@ test "the largest presence the protocol permits fits its buffer" {
         .details = &fields,
         .state_url = link,
         .details_url = link,
-        .status_display = .details,
+        .status_display_type = .details,
         .start_timestamp = std.math.minInt(i64),
         .end_timestamp = std.math.maxInt(i64),
         .large_image_key = key,
@@ -1733,7 +1733,7 @@ test "the largest presence the protocol permits fits its buffer" {
         .join_secret = &fields,
         .spectate_secret = &fields,
         .instance = true,
-        .kind = .competing,
+        .activity_type = .competing,
         .buttons = &.{ button, button },
     };
 

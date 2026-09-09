@@ -42,7 +42,7 @@ typedef struct {
     const char *details;
     const char *state_url;
     const char *details_url;
-    int status_display;
+    int status_display_type;
     int64_t start_timestamp;
     int64_t end_timestamp;
     const char *large_image_key;
@@ -59,7 +59,7 @@ typedef struct {
     const char *join_secret;
     const char *spectate_secret;
     signed char instance;
-    int kind;
+    int activity_type;
     const DiscordButton *buttons;
     int button_count;
 } DiscordRichPresence;
@@ -84,7 +84,7 @@ int discord_client_next_event(DiscordClient *, DiscordEvent *, int timeout_ms);
 ---@field details string
 ---@field state_url string
 ---@field details_url string
----@field status_display integer
+---@field status_display_type integer
 ---@field start_timestamp integer
 ---@field end_timestamp integer
 ---@field large_image_key string
@@ -101,7 +101,7 @@ int discord_client_next_event(DiscordClient *, DiscordEvent *, int timeout_ms);
 ---@field join_secret string
 ---@field spectate_secret string
 ---@field instance integer
----@field kind integer
+---@field activity_type integer
 ---@field buttons ffi.cdata*
 ---@field button_count integer
 
@@ -130,7 +130,7 @@ local CLIENT_STATUS = {
 }
 
 local OK, EMPTY = 0, 5
-local KIND_PLAYING = 0
+local ACTIVITY_PLAYING = 0
 local REPLY_YES = 1
 
 -- The three a game is invited through. src/c.zig numbers the whole catalogue.
@@ -216,7 +216,7 @@ presence.party_id = "party-1"
 presence.party_size = 1
 presence.party_max = 6
 presence.party_privacy = 1
-presence.kind = KIND_PLAYING
+presence.activity_type = ACTIVITY_PLAYING
 
 -- Held in a variable, because the presence keeps a pointer to it.
 local buttons = ffi.new("DiscordButton[2]", {

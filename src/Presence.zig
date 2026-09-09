@@ -26,16 +26,24 @@ pub const Button = struct {
     url: []const u8,
 };
 
-/// How Discord phrases the activity in the member list. `SET_ACTIVITY` takes these four.
-pub const Kind = enum(u8) {
+/// Discord's `type` on the activity, which is how it phrases the activity in the member list.
+///
+/// The documentation limits `SET_ACTIVITY` to playing, listening, watching and competing, and
+/// the client has taken the other two before the documentation named them. Left open, since
+/// Discord numbers these itself and adds to them.
+pub const ActivityType = enum(u8) {
     playing = 0,
+    streaming = 1,
     listening = 2,
     watching = 3,
+    custom = 4,
     competing = 5,
+    _,
 };
 
-/// Which line the member list shows beside the activity.
-pub const StatusDisplay = enum(u8) {
+/// Discord's `status_display_type`: which of the fields below feeds the status message.
+pub const StatusDisplayType = enum(u8) {
+    /// The application's own name.
     name = 0,
     state = 1,
     details = 2,
@@ -64,8 +72,8 @@ match_secret: ?[]const u8 = null, // max_text_bytes
 join_secret: ?[]const u8 = null, // max_text_bytes
 spectate_secret: ?[]const u8 = null, // max_text_bytes
 instance: bool = false,
-kind: Kind = .playing,
-status_display: StatusDisplay = .name,
+activity_type: ActivityType = .playing,
+status_display_type: StatusDisplayType = .name,
 /// At most `max_buttons`. Borrowed only for the length of the call that carries them.
 buttons: []const Button = &.{},
 

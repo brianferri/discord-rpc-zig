@@ -66,10 +66,10 @@
 //!     .join_secret = "a secret only your game understands",
 //!
 //!     // A link opens when the player taps the line or the image it hangs on, and
-//!     // `status_display` picks the line the member list shows.
+//!     // `status_display_type` picks the field the status message reads from.
 //!     .details_url = "https://example.com/matches/42",
 //!     .large_image_url = "https://example.com/maps/harbour",
-//!     .status_display = .details,
+//!     .status_display_type = .details,
 //! });
 //!
 //! try client.clearPresence(io);

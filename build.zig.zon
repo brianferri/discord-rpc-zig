@@ -1,6 +1,6 @@
 .{
     .name = .discord_rpc,
-    .version = "0.1.0",
+    .version = "0.1.1",
     .fingerprint = 0x590b88314cf38219,
     .minimum_zig_version = "0.17.0-dev.1786",
     .dependencies = .{},

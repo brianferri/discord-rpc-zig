@@ -215,8 +215,20 @@ pub const Reply = enum(c_int) { no = 0, yes = 1, ignore = 2 };
 /// Who a presence lets join the party.
 pub const Privacy = enum(c_int) { private = 0, public = 1 };
 
-/// `RichPresence.status_display`.
-pub const StatusDisplay = enum(c_int) { name = 0, state = 1, details = 2 };
+/// `RichPresence.status_display_type`.
+pub const StatusDisplayType = enum(c_int) { name = 0, state = 1, details = 2 };
+
+/// `RichPresence.activity_type`. Discord numbers these and adds to them, so a value this does
+/// not name is carried through as it stands.
+pub const ActivityType = enum(c_int) {
+    playing = 0,
+    streaming = 1,
+    listening = 2,
+    watching = 3,
+    custom = 4,
+    competing = 5,
+    _,
+};
 
 /// `ForeignVoiceMode.kind`, and what `ForeignVoiceUpdate.mode` points at.
 pub const VoiceMode = enum(c_int) { push_to_talk = 0, voice_activity = 1 };
@@ -240,7 +252,8 @@ fn mirrors(comptime Published: type, comptime Named: type) void {
 comptime {
     mirrors(Reply, Client.Reply);
     mirrors(Privacy, Presence.Privacy);
-    mirrors(StatusDisplay, Presence.StatusDisplay);
+    mirrors(StatusDisplayType, Presence.StatusDisplayType);
+    mirrors(ActivityType, Presence.ActivityType);
     mirrors(VoiceMode, rpc.VoiceSettings.Mode.Kind);
     mirrors(DeviceKind, rpc.CertifiedDevice.Kind);
     mirrors(EventKind, @typeInfo(Client.Event).@"union".tag_type.?);
@@ -300,8 +313,9 @@ pub const RichPresence = extern struct {
     /// Opened when the player taps the line it belongs to. A web scheme and printable ASCII.
     state_url: ?[*:0]const u8,
     details_url: ?[*:0]const u8,
-    /// Which line the member list shows: 0 the application name, 1 the state, 2 the details.
-    status_display: c_int,
+    /// Which field feeds the status message: 0 the application name, 1 the state,
+    /// 2 the details. The values `StatusDisplayType` names.
+    status_display_type: c_int,
     start_timestamp: i64,
     end_timestamp: i64,
     large_image_key: ?[*:0]const u8,
@@ -318,8 +332,8 @@ pub const RichPresence = extern struct {
     join_secret: ?[*:0]const u8,
     spectate_secret: ?[*:0]const u8,
     instance: i8,
-    /// How Discord phrases the activity: 0 playing, 2 listening, 3 watching, 5 competing.
-    kind: c_int,
+    /// How Discord phrases the activity, as the values `ActivityType` names.
+    activity_type: c_int,
     buttons: ?[*]const ForeignButton,
     button_count: c_int,
 };
@@ -952,7 +966,8 @@ pub export fn discord_client_set_presence(
         .details = optional(given.details),
         .state_url = optional(given.state_url),
         .details_url = optional(given.details_url),
-        .status_display = spoken(Presence.StatusDisplay, given.status_display) orelse .name,
+        .status_display_type = spoken(Presence.StatusDisplayType, given.status_display_type) orelse
+            .name,
         .start_timestamp = if (given.start_timestamp == 0) null else given.start_timestamp,
         .end_timestamp = if (given.end_timestamp == 0) null else given.end_timestamp,
         .large_image_key = optional(given.large_image_key),
@@ -969,7 +984,7 @@ pub export fn discord_client_set_presence(
         .join_secret = optional(given.join_secret),
         .spectate_secret = optional(given.spectate_secret),
         .instance = given.instance != 0,
-        .kind = activityKind(given.kind),
+        .activity_type = activityType(given.activity_type),
         .buttons = buttons[0..button_count],
     };
     self.client.updatePresence(self.io, &activity) catch |err| return status(err);
@@ -1476,12 +1491,11 @@ fn privacy(value: c_int) Presence.Privacy {
     return if (value == @backingInt(Privacy.public)) .public else .private;
 }
 
-/// Anything unrecognized is the activity a zeroed struct asks for.
-fn activityKind(value: c_int) Presence.Kind {
-    inline for (comptime std.enums.values(Presence.Kind)) |kind| {
-        if (value == @backingInt(kind)) return kind;
-    }
-    return .playing;
+/// Discord numbers these itself and adds to them, so a value this ABI does not name is carried
+/// through as it stands. One no byte can hold is the activity a zeroed struct asks for.
+fn activityType(value: c_int) Presence.ActivityType {
+    const held = std.math.cast(u8, value) orelse return .playing;
+    return @fromBackingInt(held);
 }
 
 /// A NUL-terminated copy, since this API carries lengths and C wants sentinels.

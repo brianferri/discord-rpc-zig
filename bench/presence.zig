@@ -88,7 +88,7 @@ const buttons = [_]Presence.Button{
 const with_buttons: Presence = .{
     .state = "In the lobby",
     .details = "Counter: 1234",
-    .kind = .listening,
+    .activity_type = .listening,
     .buttons = &buttons,
 };
 

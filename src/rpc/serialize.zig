@@ -664,15 +664,18 @@ const Activity = struct {
         assert(presence.party_size <= presence.party_max or presence.party_max == 0);
 
         return .{
-            .type = if (presence.kind == .playing) null else @backingInt(presence.kind),
+            .type = if (presence.activity_type == .playing)
+                null
+            else
+                @backingInt(presence.activity_type),
             .state = optional(presence.state),
             .state_url = optional(presence.state_url),
             .details = optional(presence.details),
             .details_url = optional(presence.details_url),
-            .status_display_type = if (presence.status_display == .name)
+            .status_display_type = if (presence.status_display_type == .name)
                 null
             else
-                @backingInt(presence.status_display),
+                @backingInt(presence.status_display_type),
             .timestamps = nonEmpty(Timestamps, .{
                 .start = presence.start_timestamp,
                 .end = presence.end_timestamp,
@@ -1112,12 +1115,12 @@ test "richPresence writes only the fields that are set" {
     , buffer[0..length]);
 }
 
-test "an activity carries its kind and its links" {
+test "an activity carries its type and its links" {
     var buffer: [1024]u8 = undefined;
 
     const presence: Presence = .{
         .state = "state-1",
-        .kind = .listening,
+        .activity_type = .listening,
         .buttons = &.{
             .{ .label = "First", .url = "https://example.com/one" },
             .{ .label = "Second", .url = "http://example.com/two" },
@@ -1137,7 +1140,7 @@ test "an activity hangs a link on its text and on its images" {
         .state_url = "https://example.com/party",
         .details = "details-1",
         .details_url = "https://example.com/match",
-        .status_display = .details,
+        .status_display_type = .details,
         .large_image_key = "image-1",
         .large_image_url = "https://example.com/map",
         .small_image_key = "image-2",
