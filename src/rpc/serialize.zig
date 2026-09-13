@@ -1038,7 +1038,10 @@ test "selecting a channel carries the null that leaves one" {
     , buffer[0..joined]);
 
     // Leaving names no channel, and the member has to survive as an explicit null.
-    const left = try selectVoiceChannel(&buffer, 18, null, .{});
+    const left = try selectVoiceChannel(&buffer, 18, null, .{
+        .force = false,
+        .navigate = false,
+    });
     try std.testing.expectEqualStrings(
         \\{"nonce":"18","cmd":"SELECT_VOICE_CHANNEL","args":{"force":false,"navigate":false}}
     , buffer[0..left]);
