@@ -84,15 +84,42 @@ pub fn init(input: []const u8) Scanner {
     };
 }
 
+/// What holds of a scanner between one token and the next, asserted wherever it moves.
+///
+/// The cursor and the depth both index memory: a cursor past the input reads bytes that are
+/// not the payload's, and a depth past the stack reads a bit that belongs to nothing. Holding
+/// them here is what keeps a walk over a payload from a stranger inside its own buffer.
+fn invariants(scanner: *const Scanner) void {
+    assert(scanner.cursor <= scanner.input.len);
+    assert(scanner.depth <= max_depth);
+
+    // A key or the colon after one is only reachable inside an object.
+    if (scanner.state == .key or scanner.state == .key_or_end) assert(scanner.depth > 0);
+    if (scanner.state == .colon) assert(scanner.depth > 0);
+
+    // Whatever the last token carried is a slice of the payload, never a copy of it.
+    if (scanner.value.len > 0) {
+        assert(@intFromPtr(scanner.value.ptr) >= @intFromPtr(scanner.input.ptr));
+        const end = @intFromPtr(scanner.value.ptr) + scanner.value.len;
+        assert(end <= @intFromPtr(scanner.input.ptr) + scanner.input.len);
+    }
+}
+
 /// How many containers are open. A value at the top level sits at zero.
 pub fn stackHeight(scanner: *const Scanner) u32 {
     return scanner.depth;
 }
 
 pub fn next(scanner: *Scanner) Error!Kind {
-    while (true) {
-        scanner.skipWhitespace();
+    scanner.invariants();
+    defer scanner.invariants();
 
+    while (true) {
+        // A pass that answers nothing takes the separator or the colon it stood on, so the
+        // input is what bounds the walk and no payload can hold it here.
+        const stood_at = scanner.cursor;
+
+        scanner.skipWhitespace();
         switch (scanner.state) {
             .value, .value_or_end => return scanner.readValue(),
             .key, .key_or_end => return scanner.readKey(),
@@ -102,6 +129,8 @@ pub fn next(scanner: *Scanner) Error!Kind {
             },
             .post_value => if (try scanner.readSeparator()) |kind| return kind,
         }
+
+        assert(scanner.cursor > stood_at);
     }
 }
 
@@ -112,6 +141,9 @@ pub fn peek(scanner: *const Scanner) Error!Kind {
     var state = scanner.state;
 
     while (true) {
+        // The same bound `next` walks under: a pass that answers nothing steps over a byte.
+        const stood_at = cursor;
+
         cursor = skipSpaceAt(scanner.input, cursor);
 
         if (cursor == scanner.input.len) {
@@ -147,6 +179,8 @@ pub fn peek(scanner: *const Scanner) Error!Kind {
                 }
             },
         }
+
+        assert(cursor > stood_at);
     }
 }
 

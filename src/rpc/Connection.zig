@@ -115,6 +115,27 @@ pub fn deinit(connection: *Connection, io: Io) void {
     connection.* = undefined;
 }
 
+/// What holds of a connection between one frame and the next, asserted wherever it moves.
+///
+/// The two counts address a caller's chunk: bytes drawn past a frame wait at `pending_at`
+/// until the next read takes them. A count that outran the frame size would hand the next
+/// read whatever sat beyond it.
+fn invariants(connection: *const Connection) void {
+    assert(connection.pending <= max_frame_size);
+    assert(connection.pending_at <= max_frame_size);
+    assert(connection.pending_at + connection.pending <= max_frame_size);
+
+    // Bytes left over sit behind the frame that drew them, never at its head.
+    if (connection.pending > 0) assert(connection.pending_at >= header_size);
+
+    // A state past disconnected names an endpoint, and nothing is held over without one.
+    if (connection.endpoint == null) {
+        assert(connection.state == .disconnected);
+        assert(connection.pending == 0);
+        assert(connection.pending_at == 0);
+    }
+}
+
 pub fn isOpen(connection: *const Connection) bool {
     return connection.state == .connected;
 }
@@ -155,7 +176,7 @@ pub fn close(connection: *Connection, io: Io) void {
     connection.pending_at = 0;
 
     assert(!connection.isOpen());
-    assert(connection.pending == 0);
+    connection.invariants();
 }
 
 /// `frame` carries its payload at `header_size`, leaving room for the header written here.
@@ -189,6 +210,8 @@ pub fn read(
 ) ReadError!Message {
     assert(chunk.len >= max_frame_size);
     assert(connection.state != .disconnected);
+    connection.invariants();
+    defer connection.invariants();
 
     const endpoint = &(connection.endpoint orelse return error.ConnectionClosed);
     var have = connection.take(chunk);
