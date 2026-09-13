@@ -32,7 +32,7 @@ pub const payload_widths: []const usize = &.{lanes};
 
 /// Group sizes for a run that is one field, which is often shorter than a lane. Narrowing
 /// after the lane is what keeps a short field off the byte-at-a-time walk.
-pub const field_widths: []const usize = &.{ lanes, lanes / 2 };
+pub const field_widths: []const usize = &.{ lanes, @divExact(lanes, 2) };
 
 /// Where a search stopped, and what it saw on the way.
 pub const Run = struct {
