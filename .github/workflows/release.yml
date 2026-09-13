@@ -87,7 +87,7 @@ jobs:
           for linkage in dynamic static; do
             zig build lib \
               -Dtarget=${{ matrix.target }} \
-              -Doptimize=ReleaseFast \
+              -Doptimize=ReleaseSafe \
               -Dlinkage=$linkage \
               --prefix "staging/$RELEASE/$linkage"
           done

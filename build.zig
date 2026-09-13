@@ -56,11 +56,11 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("bench/presence.zig"),
             .target = target,
-            .optimize = .ReleaseFast,
+            .optimize = .ReleaseSafe,
             .imports = &.{.{ .name = "discord_rpc", .module = b.createModule(.{
                 .root_source_file = b.path("src/root.zig"),
                 .target = target,
-                .optimize = .ReleaseFast,
+                .optimize = .ReleaseSafe,
             }) }},
         }),
     });
