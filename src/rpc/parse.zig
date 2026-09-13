@@ -138,7 +138,7 @@ const Members = struct {
 };
 
 const TopLevel = enum { cmd, evt, nonce, code, message, data, other };
-const Data = enum { secret, code, message, user, other };
+const DataFields = enum { secret, code, message, user, other };
 const Account = enum { id, username, discriminator, avatar, other };
 const Voice = enum {
     input,
@@ -189,7 +189,7 @@ const Entitled = enum { entitlement, id, sku_id, other };
 
 comptime {
     for (.{
-        TopLevel,         Data,        Account,       Voice,      VoiceChannel,
+        TopLevel,         DataFields,  Account,       Voice,      VoiceChannel,
         VoiceDevice,      VoiceMode,   VoiceKey,      UserVoice,  Pan,
         Guilds,           Channels,    GuildFields,   VoiceFlags, ChannelFields,
         VoiceStateFields, NamedFields, Relationship,  Selected,   Connected,
@@ -283,7 +283,7 @@ fn readData(result: *Frame, walk: *Walk) Error!void {
 
     var members: Members = .{ .walk = walk };
     while (try members.next()) |key| {
-        switch (match(Data, key)) {
+        switch (match(DataFields, key)) {
             .secret => try readIdentifier(text_bytes, &result.secret, walk),
             // `AUTHORIZE` answers with a string here where an error answers with a number,
             // so the kind decides which field the value lands in.

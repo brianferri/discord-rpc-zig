@@ -579,10 +579,10 @@ pub const Handle = extern struct {
     /// Paired with the address, so only storage this wrote resolves.
     const magic: u64 = 0x8f3a_1c77_b204_e659;
 
-    fn open(handle: *Handle, state: *State) void {
-        const address: u64 = @intFromPtr(state);
+    fn open(handle: *Handle, instance: *Instance) void {
+        const address: u64 = @intFromPtr(instance);
         handle.* = .{ .opaque_fields = .{ address, address ^ magic } };
-        assert(handle.resolve() == state);
+        assert(handle.resolve() == instance);
     }
 
     fn close(handle: *Handle) void {
@@ -590,7 +590,7 @@ pub const Handle = extern struct {
         assert(handle.resolve() == null);
     }
 
-    fn resolve(handle: *const Handle) ?*State {
+    fn resolve(handle: *const Handle) ?*Instance {
         const address = handle.opaque_fields[0];
         if (address == 0) return null;
         if (handle.opaque_fields[1] != address ^ magic) return null;
@@ -643,7 +643,7 @@ const Runtime = struct {
 
 /// A client costs `Client.max_footprint_bytes` and must not move, so this lives on the heap
 /// and the handle carries its address.
-const State = struct {
+const Instance = struct {
     io: Io,
     environ: Environ.Map,
     /// What the last event handed out points into, so one event lives until the next.
@@ -652,7 +652,7 @@ const State = struct {
     voice: VoiceStorage,
     client: Client,
 
-    fn destroy(self: *State) void {
+    fn destroy(self: *Instance) void {
         self.client.deinit(self.io);
         self.environ.deinit();
         allocator.destroy(self);
@@ -766,7 +766,7 @@ pub export fn discord_client_init(
     if (id.len == 0) return .application_id_invalid;
 
     const gpa = allocator;
-    const self = gpa.create(State) catch return .out_of_memory;
+    const self = gpa.create(Instance) catch return .out_of_memory;
     const environ = captureEnviron(gpa, optional_environ) catch |err| {
         gpa.destroy(self);
         return switch (err) {
@@ -806,7 +806,7 @@ pub export fn discord_client_init(
 }
 
 /// The reader and the writer, under the status a caller sees for them.
-fn startStatus(self: *State) InitStatus {
+fn startStatus(self: *Instance) InitStatus {
     self.client.start(self.io, &self.environ) catch |err| return switch (err) {
         error.InvalidApplicationId => .application_id_invalid,
         error.ConcurrencyUnavailable => .system_resources,
